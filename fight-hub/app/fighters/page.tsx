@@ -1,0 +1,9 @@
+import Link from "next/link";
+import { getMMAProvider } from "@/lib/providers";
+import { FighterCard } from "@/components/fighters/FighterCard";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SearchBox } from "@/components/search/SearchBox";
+import type { PaginatedFighters } from "@/lib/types/mma";
+export const metadata={title:"Peleadores"};
+const divisions=["Flyweight","Bantamweight","Featherweight","Lightweight","Welterweight","Middleweight","Light Heavyweight","Heavyweight","Women's Strawweight","Women's Flyweight","Women's Bantamweight"];
+export default async function FightersPage({searchParams}:{searchParams:Promise<{page?:string;division?:string}>}){const p=await searchParams;const page=Math.max(0,Number(p.page??0)||0);const division=p.division;let data: PaginatedFighters={items:[],page,hasMore:false};try{data=await getMMAProvider().getFighters(page,division)}catch{}return <div className="page"><div className="page-title"><span className="eyebrow">DIRECTORIO</span><h1>PELEADORES</h1></div><div className="search-page-box" style={{margin:"0 0 20px"}}><SearchBox/></div><div className="filters"><Link className={!division?"active":""} href="/fighters">Todos</Link>{divisions.map(d=><Link className={division===d?"active":""} href={`/fighters?division=${encodeURIComponent(d)}`} key={d}>{d}</Link>)}</div>{data.items.length?<div className="fighter-grid">{data.items.map(f=><FighterCard fighter={f} key={f.id}/>)}</div>:<EmptyState/>}<div className="pagination">{page>0&&<Link className="btn btn-secondary" href={`/fighters?page=${page-1}${division?`&division=${encodeURIComponent(division)}`:""}`}>Anterior</Link>}<Link className="btn btn-primary" href={`/fighters?page=${page+1}${division?`&division=${encodeURIComponent(division)}`:""}`}>Siguiente</Link></div></div>}

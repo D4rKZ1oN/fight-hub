@@ -1,0 +1,40 @@
+# FIGHT HUB
+
+MVP personal y gratuito para consultar eventos UFC/MMA, carteleras, peleadores, estadísticas y rankings.
+
+## Fuentes
+
+- ESPN: scoreboard y fightcenter públicos/no documentados oficialmente como API pública.
+- UFC.com: directorio, perfiles y rankings oficiales mediante lectura server-side del HTML público.
+
+No usa API keys ni servicios de datos de pago. Si una fuente cambia su estructura, la app muestra estados vacíos/error en vez de inventar datos.
+
+## Desarrollo local
+
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Abre http://localhost:3000
+
+## Variables
+
+```env
+SPORTS_DATA_PROVIDER=espn
+NEXT_PUBLIC_APP_NAME=FIGHT HUB
+```
+
+## Deploy en Vercel
+
+1. Sube el proyecto a GitHub.
+2. En Vercel: Add New > Project > Import `fight-hub`.
+3. Añade las dos variables anteriores.
+4. Deploy.
+
+No necesitas API key.
+
+## Aviso técnico
+
+Los endpoints de ESPN usados por el proyecto son endpoints públicos utilizados por ESPN, pero no una API pública documentada con SLA. El patrón Provider/Adapter permite reemplazarlos sin reescribir la UI.
