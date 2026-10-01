@@ -1,5 +1,5 @@
 import type { MMADataProvider } from "./MMADataProvider";
-import type { Event, Fighter, FighterStats, PaginatedFighters, Ranking, SearchResults } from "@/lib/types/mma";
+import type { Event, Fighter, FighterStats, FighterFightHistoryItem, PaginatedFighters, Ranking, SearchResults } from "@/lib/types/mma";
 
 export class MockProvider implements MMADataProvider {
   private disabled(): never { throw new Error("MockProvider contiene solo datos DEMO y está desactivado en producción."); }
@@ -9,6 +9,7 @@ export class MockProvider implements MMADataProvider {
   async searchFighters(): Promise<Fighter[]> { return this.disabled(); }
   async getFighter(): Promise<Fighter | null> { return this.disabled(); }
   async getFighterStats(): Promise<FighterStats | null> { return this.disabled(); }
+  async getFighterHistory(): Promise<FighterFightHistoryItem[]> { return this.disabled(); }
   async getFighters(): Promise<PaginatedFighters> { return this.disabled(); }
   async getRankings(): Promise<Ranking[]> { return this.disabled(); }
   async getRankingsByDivision(): Promise<Ranking | null> { return this.disabled(); }

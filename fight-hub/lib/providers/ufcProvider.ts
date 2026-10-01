@@ -1,8 +1,9 @@
 import * as cheerio from "cheerio";
 import { fetchHtml } from "@/lib/api/fetch";
 import type { MMADataProvider } from "./MMADataProvider";
-import type { Event, Fighter, FighterStats, PaginatedFighters, Ranking, SearchResults } from "@/lib/types/mma";
+import type { Event, Fighter, FighterFightHistoryItem, FighterStats, PaginatedFighters, Ranking, SearchResults } from "@/lib/types/mma";
 import { cleanText, parseNumber, slugify } from "@/lib/utils/text";
+import { UfcStatsProvider } from "./ufcStatsProvider";
 
 const UFC = "https://www.ufc.com";
 const DIVISIONS = [
@@ -48,6 +49,7 @@ function metricBeforeLabel(text: string, label: string): number | null {
 }
 
 export class UfcProvider implements MMADataProvider {
+  private statsHistory = new UfcStatsProvider();
   async getUpcomingEvents(): Promise<Event[]> { return []; }
   async getEvent(): Promise<Event | null> { return null; }
   async getEventFightCard(): Promise<Pick<Event, "mainEvent" | "coMainEvent" | "mainCard" | "prelims" | "earlyPrelims"> | null> { return null; }
@@ -125,6 +127,16 @@ export class UfcProvider implements MMADataProvider {
 
   async getFighter(id: string): Promise<Fighter | null> { return (await this.fighterPage(id))?.fighter ?? null; }
   async getFighterStats(id: string): Promise<FighterStats | null> { return (await this.fighterPage(id))?.stats ?? null; }
+
+  async getFighterHistory(id: string): Promise<FighterFightHistoryItem[]> {
+    const page = await this.fighterPage(id);
+    if (!page?.fighter.name) return [];
+    try {
+      return await this.statsHistory.getFighterHistoryByName(page.fighter.name);
+    } catch {
+      return [];
+    }
+  }
 
   async getRankings(): Promise<Ranking[]> {
     const html = await fetchHtml(`${UFC}/rankings`, 21600);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { fetchJson } from "@/lib/api/fetch";
 import type { MMADataProvider } from "./MMADataProvider";
-import type { CardType, Event, EventStatus, Fight, Fighter, FighterStats, PaginatedFighters, Ranking, SearchResults } from "@/lib/types/mma";
+import type { CardType, Event, EventStatus, Fight, Fighter, FighterFightHistoryItem, FighterStats, PaginatedFighters, Ranking, SearchResults } from "@/lib/types/mma";
 import { slugify } from "@/lib/utils/text";
 import { UfcProvider } from "./ufcProvider";
 
@@ -266,6 +266,7 @@ export class EspnProvider implements MMADataProvider {
   async searchFighters(query: string): Promise<Fighter[]> { return this.ufc.searchFighters(query); }
   async getFighter(id: string): Promise<Fighter | null> { return this.ufc.getFighter(id); }
   async getFighterStats(id: string): Promise<FighterStats | null> { return this.ufc.getFighterStats(id); }
+  async getFighterHistory(id: string): Promise<FighterFightHistoryItem[]> { return this.ufc.getFighterHistory(id); }
   async getFighters(page = 0, division?: string): Promise<PaginatedFighters> { return this.ufc.getFighters(page, division); }
   async getRankings(): Promise<Ranking[]> { return this.ufc.getRankings(); }
   async getRankingsByDivision(division: string): Promise<Ranking | null> { return this.ufc.getRankingsByDivision(division); }

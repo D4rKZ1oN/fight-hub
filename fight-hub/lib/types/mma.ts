@@ -46,6 +46,24 @@ export interface FighterStats {
   fightBonuses: number | null;
 }
 
+
+export type FightHistoryResult = "WIN" | "LOSS" | "DRAW" | "NC" | "UNKNOWN";
+
+export interface FighterFightHistoryItem {
+  id: string;
+  result: FightHistoryResult;
+  opponentName: string;
+  opponentId: string | null;
+  eventName: string | null;
+  eventUrl: string | null;
+  date: string | null;
+  method: string | null;
+  methodDetail: string | null;
+  round: number | null;
+  time: string | null;
+  fightUrl: string | null;
+}
+
 export interface FightResult {
   method: string | null;
   round: number | null;
