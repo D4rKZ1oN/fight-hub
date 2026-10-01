@@ -38,3 +38,6 @@ No necesitas API key.
 ## Aviso técnico
 
 Los endpoints de ESPN usados por el proyecto son endpoints públicos utilizados por ESPN, pero no una API pública documentada con SLA. El patrón Provider/Adapter permite reemplazarlos sin reescribir la UI.
+
+## v3 - corrección de TypeScript
+Se tiparon explícitamente `fighter`, `stats` y `history` en la página de perfil para evitar el error TS7034/TS7005 durante el build de Vercel.
