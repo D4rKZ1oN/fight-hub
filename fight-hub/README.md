@@ -59,3 +59,6 @@ El historial usa UFCStats como fuente primaria para que WIN/LOST siempre corresp
 - Se eliminó el fallback de UFC.com que podía etiquetar peleas incorrectamente.
 - El historial evita caché de HTML y el perfil del peleador se renderiza dinámicamente.
 - WIN corresponde al peleador del perfil; LOST corresponde a una derrota de ese peleador.
+
+## v9 - ESPN Fight History
+El historial usa ESPN MMA Fight History como fuente principal para evitar bloqueos de UFCStats en despliegues Vercel y conservar resultados WIN/LOSS desde la perspectiva del peleador.

@@ -13,6 +13,7 @@ import type {
 } from "@/lib/types/mma";
 import { cleanText, parseNumber, slugify } from "@/lib/utils/text";
 import { UfcStatsProvider } from "./ufcStatsProvider";
+import { EspnHistoryProvider } from "./espnHistoryProvider";
 
 const UFC = "https://www.ufc.com";
 const DIVISIONS = [
@@ -187,6 +188,7 @@ function parseUfcHistoryFromHtml(html: string, fighterName: string, pageNumber: 
 
 export class UfcProvider implements MMADataProvider {
   private statsHistory = new UfcStatsProvider();
+  private espnHistory = new EspnHistoryProvider();
 
   async getUpcomingEvents(): Promise<Event[]> { return []; }
   async getEvent(): Promise<Event | null> { return null; }
@@ -361,9 +363,19 @@ export class UfcProvider implements MMADataProvider {
     const page = await this.fighterPage(id);
     if (!page?.fighter.name) return [];
 
-    // Use UFCStats as the only source for WIN/LOSS because each row on a
-    // fighter-details page is already expressed from that fighter's perspective.
-    // If UFCStats is unavailable we prefer an empty state over a wrong result.
+    // ESPN publishes a dedicated MMA Fight History table whose W/L result is
+    // already relative to the fighter profile being viewed. It is the primary
+    // history source because it is served from the same ESPN ecosystem already
+    // used by Fight Hub for events and is more reliable on Vercel than UFCStats.
+    try {
+      const history = await this.espnHistory.getFighterHistoryByName(page.fighter.name);
+      if (history.length) return history;
+    } catch {
+      // Continue to the secondary public source below.
+    }
+
+    // Secondary fallback only.  If UFCStats is unavailable or cannot map the
+    // athlete, return an empty state instead of fabricating a result.
     try {
       const history = await this.statsHistory.getFighterHistoryByName(page.fighter.name);
       return history.filter((item) => item.result !== "UNKNOWN");

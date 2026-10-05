@@ -96,8 +96,7 @@ export default async function FighterPage({ params }: Props) {
       </CardSection>
 
       <p className="source-note">
-        Perfil, estadísticas e historial: UFC.com cuando están disponibles, con UFCStats
-        únicamente como respaldo para el historial. No se rellenan campos ausentes.
+        Perfil y estadísticas: UFC.com. Historial de peleas: ESPN como fuente principal, con UFCStats como respaldo. No se rellenan campos ausentes.
       </p>
     </div>
   );
