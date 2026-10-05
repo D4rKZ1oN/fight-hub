@@ -41,3 +41,11 @@ Los endpoints de ESPN usados por el proyecto son endpoints públicos utilizados 
 
 ## v3 - corrección de TypeScript
 Se tiparon explícitamente `fighter`, `stats` y `history` en la página de perfil para evitar el error TS7034/TS7005 durante el build de Vercel.
+
+## v4 — correcciones UFC
+- Los próximos eventos ya no muestran `ESTADO NO DISPONIBLE` cuando ESPN los identifica como programados.
+- El detalle de eventos usa el scoreboard por fecha como respaldo para arena/ciudad/país.
+- Fight History intenta primero el historial publicado en UFC.com y usa UFCStats solo como respaldo.
+- Las tarjetas del directorio recuperan la foto del perfil cuando el listado no la entrega.
+- Se agregó `Mis peleadores favoritos`, guardado localmente en el navegador/PWA.
+- `CHAMPION` solo aparece cuando el perfil oficial incluye la etiqueta exacta `Title Holder`.

@@ -40,15 +40,15 @@ export default async function FighterPage({ params }: Props) {
   let stats: FighterStatsData | null = null;
   let history: FighterFightHistoryItem[] = [];
 
-  try {
-    [fighter, stats, history] = await Promise.all([
-      provider.getFighter(fighterId),
-      provider.getFighterStats(fighterId),
-      provider.getFighterHistory(fighterId),
-    ]);
-  } catch {
-    // Cada sección mantiene su estado vacío cuando la fuente no responde.
-  }
+  const [fighterResult, statsResult, historyResult] = await Promise.allSettled([
+    provider.getFighter(fighterId),
+    provider.getFighterStats(fighterId),
+    provider.getFighterHistory(fighterId),
+  ]);
+
+  if (fighterResult.status === "fulfilled") fighter = fighterResult.value;
+  if (statsResult.status === "fulfilled") stats = statsResult.value;
+  if (historyResult.status === "fulfilled") history = historyResult.value;
 
   if (!fighter) notFound();
 
@@ -93,8 +93,8 @@ export default async function FighterPage({ params }: Props) {
       </CardSection>
 
       <p className="source-note">
-        Perfil y estadísticas: UFC.com. Historial de peleas: UFCStats. Solo se
-        muestran datos publicados por las fuentes; no se rellenan campos ausentes.
+        Perfil, estadísticas e historial: UFC.com cuando están disponibles, con UFCStats
+        únicamente como respaldo para el historial. No se rellenan campos ausentes.
       </p>
     </div>
   );

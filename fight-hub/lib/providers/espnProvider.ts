@@ -1,12 +1,34 @@
 import { z } from "zod";
 import { fetchJson } from "@/lib/api/fetch";
 import type { MMADataProvider } from "./MMADataProvider";
-import type { CardType, Event, EventStatus, Fight, Fighter, FighterFightHistoryItem, FighterStats, PaginatedFighters, Ranking, SearchResults } from "@/lib/types/mma";
+import type {
+  CardType,
+  Event,
+  EventStatus,
+  Fight,
+  Fighter,
+  FighterFightHistoryItem,
+  FighterStats,
+  PaginatedFighters,
+  Ranking,
+  SearchResults,
+  Venue,
+} from "@/lib/types/mma";
 import { slugify } from "@/lib/utils/text";
 import { UfcProvider } from "./ufcProvider";
 
 const ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
 const ESPN_FIGHTCENTER = "https://site.web.api.espn.com/apis/common/v3/sports/mma/ufc/fightcenter";
+
+const venueSchema = z.object({
+  id: z.union([z.string(), z.number()]).optional(),
+  fullName: z.string().optional(),
+  address: z.object({
+    city: z.string().optional(),
+    state: z.string().optional(),
+    country: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough();
 
 const athleteSchema = z.object({
   id: z.union([z.string(), z.number()]).optional(),
@@ -33,15 +55,26 @@ const competitorSchema = z.object({
   athlete: athleteSchema,
 }).passthrough();
 
+const statusSchema = z.object({
+  type: z.object({
+    id: z.string().optional(),
+    name: z.string().optional(),
+    state: z.string().optional(),
+    completed: z.boolean().optional(),
+    description: z.string().optional(),
+    detail: z.string().optional(),
+    shortDetail: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
 const competitionSchema = z.object({
   id: z.union([z.string(), z.number()]),
   date: z.string().optional(),
   startDate: z.string().optional(),
   type: z.object({ abbreviation: z.string().optional(), text: z.string().optional() }).passthrough().optional(),
   competitors: z.array(competitorSchema).default([]),
-  status: z.object({
-    type: z.object({ state: z.string().optional(), completed: z.boolean().optional(), description: z.string().optional() }).passthrough().optional(),
-  }).passthrough().optional(),
+  status: statusSchema.optional(),
+  venue: venueSchema.optional(),
   format: z.object({ regulation: z.object({ periods: z.number().optional() }).passthrough().optional() }).passthrough().optional(),
   notes: z.array(z.object({ headline: z.string().optional(), type: z.string().optional() }).passthrough()).optional(),
   broadcasts: z.array(z.object({ names: z.array(z.string()).optional() }).passthrough()).optional(),
@@ -54,11 +87,9 @@ const eventSchema = z.object({
   shortName: z.string().optional(),
   date: z.string(),
   competitions: z.array(competitionSchema).optional(),
-  status: z.object({ type: z.object({ state: z.string().optional(), completed: z.boolean().optional() }).passthrough().optional() }).passthrough().optional(),
-  venue: z.object({
-    fullName: z.string().optional(),
-    address: z.object({ city: z.string().optional(), state: z.string().optional(), country: z.string().optional() }).passthrough().optional(),
-  }).passthrough().optional(),
+  status: statusSchema.optional(),
+  venue: venueSchema.optional(),
+  venues: z.array(venueSchema).optional(),
 }).passthrough();
 
 const scoreboardSchema = z.object({
@@ -66,6 +97,7 @@ const scoreboardSchema = z.object({
     calendar: z.array(z.object({
       label: z.string(),
       startDate: z.string(),
+      endDate: z.string().optional(),
       event: z.object({ $ref: z.string() }).optional(),
     }).passthrough()).optional(),
   }).passthrough()).optional(),
@@ -84,6 +116,7 @@ const fightcenterSchema = z.object({
 
 type CompetitionInput = z.infer<typeof competitionSchema>;
 type EventInput = z.infer<typeof eventSchema>;
+type ScoreboardInput = z.infer<typeof scoreboardSchema>;
 
 function eventIdFromRef(ref?: string): string | null {
   if (!ref) return null;
@@ -91,11 +124,40 @@ function eventIdFromRef(ref?: string): string | null {
   return match?.[1] ?? null;
 }
 
-function mapEventStatus(state?: string, completed?: boolean): EventStatus {
-  if (completed || state === "post") return "FINAL";
-  if (state === "in") return "LIVE";
-  if (state === "pre") return "UPCOMING";
+function mapEventStatus(state?: string, completed?: boolean, name?: string, description?: string): EventStatus {
+  const normalized = `${state ?? ""} ${name ?? ""} ${description ?? ""}`.toLowerCase();
+  if (completed || state === "post" || normalized.includes("final") || normalized.includes("complete")) return "FINAL";
+  if (state === "in" || normalized.includes("in progress") || normalized.includes("live")) return "LIVE";
+  if (state === "pre" || normalized.includes("scheduled") || normalized.includes("pre")) return "UPCOMING";
   return "UNKNOWN";
+}
+
+function ensureUpcomingStatus(status: EventStatus, date: string): EventStatus {
+  if (status !== "UNKNOWN") return status;
+  const time = new Date(date).getTime();
+  return Number.isFinite(time) && time > Date.now() ? "UPCOMING" : status;
+}
+
+function normalizeVenue(input?: z.infer<typeof venueSchema> | null): Venue {
+  return {
+    name: input?.fullName ?? null,
+    city: input?.address?.city ?? null,
+    state: input?.address?.state ?? null,
+    country: input?.address?.country ?? null,
+    latitude: null,
+    longitude: null,
+  };
+}
+
+function mergeVenue(primary: Venue, fallback: Venue): Venue {
+  return {
+    name: primary.name ?? fallback.name,
+    city: primary.city ?? fallback.city,
+    state: primary.state ?? fallback.state,
+    country: primary.country ?? fallback.country,
+    latitude: primary.latitude ?? fallback.latitude,
+    longitude: primary.longitude ?? fallback.longitude,
+  };
 }
 
 function normalizeFighter(input: z.infer<typeof competitorSchema>): Fighter {
@@ -142,29 +204,28 @@ function normalizeFight(input: CompetitionInput, cardType: CardType, order: numb
 
 function emptyEvent(input: EventInput): Event {
   const comp = input.competitions?.[0];
-  const venue = comp && "venue" in comp ? (comp as Record<string, unknown>).venue : undefined;
-  const venueObj = venue && typeof venue === "object" ? venue as Record<string, unknown> : null;
-  const address = venueObj?.address && typeof venueObj.address === "object" ? venueObj.address as Record<string, unknown> : null;
+  const venueFromCompetition = normalizeVenue(comp?.venue);
+  const venueFromEvent = normalizeVenue(input.venue ?? input.venues?.[0]);
+  const venue = mergeVenue(venueFromCompetition, venueFromEvent);
   const broadcastNames = input.competitions?.flatMap((c) => c.broadcasts?.flatMap((b) => b.names ?? []) ?? []) ?? [];
   const eventNumber = input.name.match(/UFC\s+(\d+)/i)?.[1] ?? null;
+  const status = mapEventStatus(
+    input.status?.type?.state ?? comp?.status?.type?.state,
+    input.status?.type?.completed ?? comp?.status?.type?.completed,
+    input.status?.type?.name ?? comp?.status?.type?.name,
+    input.status?.type?.description ?? comp?.status?.type?.description,
+  );
   return {
     id: String(input.id),
     name: input.name,
     shortName: input.shortName ?? null,
     eventNumber,
     promotion: "UFC",
-    status: mapEventStatus(input.status?.type?.state, input.status?.type?.completed),
+    status: ensureUpcomingStatus(status, input.date),
     date: input.date,
-    startTime: input.date,
+    startTime: comp?.date ?? comp?.startDate ?? input.date,
     timezone: "UTC",
-    venue: {
-      name: typeof venueObj?.fullName === "string" ? venueObj.fullName : input.venue?.fullName ?? null,
-      city: typeof address?.city === "string" ? address.city : input.venue?.address?.city ?? null,
-      state: typeof address?.state === "string" ? address.state : input.venue?.address?.state ?? null,
-      country: typeof address?.country === "string" ? address.country : input.venue?.address?.country ?? null,
-      latitude: null,
-      longitude: null,
-    },
+    venue,
     bannerImage: null,
     posterImage: null,
     broadcast: [...new Set(broadcastNames)],
@@ -176,6 +237,30 @@ function emptyEvent(input: EventInput): Event {
     prelims: [],
     earlyPrelims: [],
   };
+}
+
+function mergeEventMetadata(primary: Event, secondary: Event): Event {
+  return {
+    ...primary,
+    name: primary.name || secondary.name,
+    shortName: primary.shortName ?? secondary.shortName,
+    eventNumber: primary.eventNumber ?? secondary.eventNumber,
+    status: primary.status === "UNKNOWN" ? secondary.status : primary.status,
+    date: primary.date || secondary.date,
+    startTime: primary.startTime ?? secondary.startTime,
+    venue: mergeVenue(primary.venue, secondary.venue),
+    broadcast: primary.broadcast.length ? primary.broadcast : secondary.broadcast,
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+function dateKey(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
 }
 
 export class EspnProvider implements MMADataProvider {
@@ -195,22 +280,16 @@ export class EspnProvider implements MMADataProvider {
     if (main[0]) main[0] = { ...main[0], isMainEvent: true };
     if (main[1]) main[1] = { ...main[1], isCoMainEvent: true };
 
-    const all = [...main, ...prelims, ...early];
-    const firstWithVenue = data.event.competitions?.[0];
-    if (firstWithVenue && "venue" in firstWithVenue) {
-      const venue = (firstWithVenue as Record<string, unknown>).venue as Record<string, unknown> | undefined;
-      const address = venue?.address as Record<string, unknown> | undefined;
-      event.venue = {
-        name: typeof venue?.fullName === "string" ? venue.fullName : event.venue.name,
-        city: typeof address?.city === "string" ? address.city : event.venue.city,
-        state: typeof address?.state === "string" ? address.state : event.venue.state,
-        country: typeof address?.country === "string" ? address.country : event.venue.country,
-        latitude: null,
-        longitude: null,
-      };
-    }
-    const firstFightDate = all.map((f) => data.cards?.main?.competitions?.find((c) => String(c.id) === f.fightId)?.date).find(Boolean);
-    event.startTime = firstFightDate ?? event.date;
+    const allCompetitions = [
+      ...(data.cards?.main?.competitions ?? []),
+      ...(data.cards?.prelims1?.competitions ?? []),
+      ...(data.cards?.prelims2?.competitions ?? []),
+    ];
+    const venueCompetition = allCompetitions.find((competition) => competition.venue)?.venue;
+    if (venueCompetition) event.venue = mergeVenue(event.venue, normalizeVenue(venueCompetition));
+
+    const firstFightDate = allCompetitions.map((competition) => competition.date ?? competition.startDate).find(Boolean);
+    event.startTime = firstFightDate ?? event.startTime ?? event.date;
     event.mainCard = main;
     event.prelims = prelims;
     event.earlyPrelims = early;
@@ -219,9 +298,34 @@ export class EspnProvider implements MMADataProvider {
     return event;
   }
 
-  async getUpcomingEvents(limit = 8): Promise<Event[]> {
+  private async rootScoreboard(): Promise<ScoreboardInput> {
     const raw = await fetchJson<unknown>(ESPN_SCOREBOARD, 1800);
+    return scoreboardSchema.parse(raw);
+  }
+
+  private calendarDateForEvent(board: ScoreboardInput, id: string): string | null {
+    const calendar = board.leagues?.[0]?.calendar ?? [];
+    return calendar.find((item) => eventIdFromRef(item.event?.$ref) === id)?.startDate ?? null;
+  }
+
+  private async scoreboardEvent(id: string, dateHint?: string | null): Promise<EventInput | null> {
+    let hint = dateHint ?? null;
+    if (!hint) {
+      const root = await this.rootScoreboard();
+      hint = this.calendarDateForEvent(root, id);
+      const alreadyLoaded = root.events?.find((event) => String(event.id) === id);
+      if (alreadyLoaded) return alreadyLoaded;
+    }
+    if (!hint) return null;
+    const key = dateKey(hint);
+    if (!key) return null;
+    const raw = await fetchJson<unknown>(`${ESPN_SCOREBOARD}?dates=${key}`, 900);
     const board = scoreboardSchema.parse(raw);
+    return board.events?.find((event) => String(event.id) === id) ?? null;
+  }
+
+  async getUpcomingEvents(limit = 8): Promise<Event[]> {
+    const board = await this.rootScoreboard();
     const now = Date.now();
     const calendar = board.leagues?.[0]?.calendar ?? [];
     const candidates = calendar
@@ -232,15 +336,31 @@ export class EspnProvider implements MMADataProvider {
 
     const settled = await Promise.allSettled(candidates.map((item) => this.getEvent(item.id!)));
     const events = settled.flatMap((result, index) => {
-      if (result.status === "fulfilled" && result.value) return [result.value];
+      if (result.status === "fulfilled" && result.value) {
+        return [{ ...result.value, status: ensureUpcomingStatus(result.value.status, result.value.date) }];
+      }
       const item = candidates[index];
       return [{
-        id: item.id!, name: item.label, shortName: item.label.split(":")[0] ?? item.label,
-        eventNumber: item.label.match(/UFC\s+(\d+)/i)?.[1] ?? null, promotion: "UFC", status: "UPCOMING" as EventStatus,
-        date: item.startDate, startTime: item.startDate, timezone: "UTC",
+        id: item.id!,
+        name: item.label,
+        shortName: item.label.split(":")[0] ?? item.label,
+        eventNumber: item.label.match(/UFC\s+(\d+)/i)?.[1] ?? null,
+        promotion: "UFC",
+        status: "UPCOMING" as EventStatus,
+        date: item.startDate,
+        startTime: item.startDate,
+        timezone: "UTC",
         venue: { name: null, city: null, state: null, country: null, latitude: null, longitude: null },
-        bannerImage: null, posterImage: null, broadcast: [], isOfficial: false, lastUpdated: new Date().toISOString(),
-        mainEvent: null, coMainEvent: null, mainCard: [], prelims: [], earlyPrelims: [],
+        bannerImage: null,
+        posterImage: null,
+        broadcast: [],
+        isOfficial: false,
+        lastUpdated: new Date().toISOString(),
+        mainEvent: null,
+        coMainEvent: null,
+        mainCard: [],
+        prelims: [],
+        earlyPrelims: [],
       } satisfies Event];
     });
     return events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -248,19 +368,53 @@ export class EspnProvider implements MMADataProvider {
 
   async getEvent(id: string): Promise<Event | null> {
     if (!/^\d+$/.test(id)) return null;
+
+    let event: Event | null = null;
+    let dateHint: string | null = null;
+
     try {
-      return this.normalizeFightcenter(await this.fightcenter(id));
+      const fightcenter = await this.fightcenter(id);
+      event = this.normalizeFightcenter(fightcenter);
+      dateHint = event.date;
     } catch {
-      const core = await fetchJson<unknown>(`https://sports.core.api.espn.com/v2/sports/mma/leagues/ufc/events/${id}`, 900);
-      const parsed = eventSchema.safeParse(core);
-      return parsed.success ? emptyEvent(parsed.data) : null;
+      // Continue with scoreboard/core fallback.
     }
+
+    try {
+      const scoreboardInput = await this.scoreboardEvent(id, dateHint);
+      if (scoreboardInput) {
+        const scoreboardEvent = emptyEvent(scoreboardInput);
+        event = event ? mergeEventMetadata(event, scoreboardEvent) : scoreboardEvent;
+        dateHint = scoreboardEvent.date;
+      }
+    } catch {
+      // Keep Fightcenter data if scoreboard metadata is temporarily unavailable.
+    }
+
+    if (!event) {
+      try {
+        const core = await fetchJson<unknown>(`https://sports.core.api.espn.com/v2/sports/mma/leagues/ufc/events/${id}`, 900);
+        const parsed = eventSchema.safeParse(core);
+        if (parsed.success) event = emptyEvent(parsed.data);
+      } catch {
+        return null;
+      }
+    }
+
+    if (event) event.status = ensureUpcomingStatus(event.status, event.date);
+    return event;
   }
 
   async getEventFightCard(id: string) {
     const event = await this.getEvent(id);
     if (!event) return null;
-    return { mainEvent: event.mainEvent, coMainEvent: event.coMainEvent, mainCard: event.mainCard, prelims: event.prelims, earlyPrelims: event.earlyPrelims };
+    return {
+      mainEvent: event.mainEvent,
+      coMainEvent: event.coMainEvent,
+      mainCard: event.mainCard,
+      prelims: event.prelims,
+      earlyPrelims: event.earlyPrelims,
+    };
   }
 
   async searchFighters(query: string): Promise<Fighter[]> { return this.ufc.searchFighters(query); }
