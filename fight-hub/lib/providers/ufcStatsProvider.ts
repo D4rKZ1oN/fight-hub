@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { fetchHtml } from "@/lib/api/fetch";
+import { fetchHtml, fetchHtmlFresh } from "@/lib/api/fetch";
 import type { FighterFightHistoryItem, FightHistoryResult } from "@/lib/types/mma";
 
 const UFC_STATS = "https://ufcstats.com";
@@ -22,11 +22,12 @@ function slugFromUfcAthleteName(name: string): string {
 }
 
 function mapResult(value: string): FightHistoryResult {
-  const result = clean(value).toLowerCase();
-  if (result.startsWith("w")) return "WIN";
-  if (result.startsWith("l")) return "LOSS";
-  if (result.startsWith("d")) return "DRAW";
-  if (result.includes("nc") || result.includes("no contest")) return "NC";
+  const raw = clean(value).toLowerCase();
+  const token = raw.split(/\s+/)[0] ?? raw;
+  if (token === "w" || token === "win") return "WIN";
+  if (token === "l" || token === "loss" || token === "lost") return "LOSS";
+  if (token === "d" || token === "draw") return "DRAW";
+  if (token === "nc" || raw.includes("no contest")) return "NC";
   return "UNKNOWN";
 }
 
@@ -111,7 +112,7 @@ export class UfcStatsProvider {
     const fighterUrl = await this.findFighterUrl(fighterName);
     if (!fighterUrl) return [];
 
-    const html = await fetchHtml(fighterUrl, 21600);
+    const html = await fetchHtmlFresh(fighterUrl);
     const $ = cheerio.load(html);
     const history: FighterFightHistoryItem[] = [];
 

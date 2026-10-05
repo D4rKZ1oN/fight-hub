@@ -361,43 +361,15 @@ export class UfcProvider implements MMADataProvider {
     const page = await this.fighterPage(id);
     if (!page?.fighter.name) return [];
 
-    // UFCStats is the primary history source because each row's W/L result is
-    // explicitly from the perspective of the fighter whose profile is open.
-    // This prevents UFC.com matchup copy from being misread as a WIN for both
-    // sides of a bout.
+    // Use UFCStats as the only source for WIN/LOSS because each row on a
+    // fighter-details page is already expressed from that fighter's perspective.
+    // If UFCStats is unavailable we prefer an empty state over a wrong result.
     try {
-      const statsHistory = await this.statsHistory.getFighterHistoryByName(page.fighter.name);
-      if (statsHistory.length) return statsHistory;
+      const history = await this.statsHistory.getFighterHistoryByName(page.fighter.name);
+      return history.filter((item) => item.result !== "UNKNOWN");
     } catch {
-      // Fall through to UFC.com only when UFCStats is unavailable.
+      return [];
     }
-
-    // Fallback: UFC.com athlete record. We preserve only rows whose result
-    // can be parsed explicitly. UNKNOWN rows are discarded rather than guessed.
-    const unique = new Map<string, FighterFightHistoryItem>();
-    const addItems = (items: FighterFightHistoryItem[]) => {
-      for (const item of items) {
-        if (item.result === "UNKNOWN") continue;
-        const key = `${normalizeName(item.opponentName)}|${item.date ?? ""}|${item.method ?? ""}|${item.round ?? ""}|${item.time ?? ""}`;
-        if (!unique.has(key)) unique.set(key, item);
-      }
-    };
-
-    addItems(parseUfcHistoryFromHtml(page.html, page.fighter.name, 0));
-
-    const historyPages = await Promise.allSettled(
-      Array.from({ length: 4 }, (_, index) => index + 1).map(async (pageNumber) => ({
-        pageNumber,
-        html: await fetchHtml(`${UFC}/athlete/${encodeURIComponent(id)}?page=${pageNumber}`, 21600),
-      })),
-    );
-
-    for (const result of historyPages) {
-      if (result.status !== "fulfilled") continue;
-      addItems(parseUfcHistoryFromHtml(result.value.html, page.fighter.name, result.value.pageNumber));
-    }
-
-    return [...unique.values()];
   }
 
   async getRankings(): Promise<Ranking[]> {

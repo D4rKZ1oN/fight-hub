@@ -12,6 +12,9 @@ import { FightHistory } from "@/components/fighters/FightHistory";
 import { CardSection } from "@/components/ui/CardSection";
 import { EmptyState } from "@/components/ui/EmptyState";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type Props = {
   params: Promise<{ fighterId: string }>;
 };
