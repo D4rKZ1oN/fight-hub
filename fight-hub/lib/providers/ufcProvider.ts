@@ -361,9 +361,23 @@ export class UfcProvider implements MMADataProvider {
     const page = await this.fighterPage(id);
     if (!page?.fighter.name) return [];
 
+    // UFCStats is the primary history source because each row's W/L result is
+    // explicitly from the perspective of the fighter whose profile is open.
+    // This prevents UFC.com matchup copy from being misread as a WIN for both
+    // sides of a bout.
+    try {
+      const statsHistory = await this.statsHistory.getFighterHistoryByName(page.fighter.name);
+      if (statsHistory.length) return statsHistory;
+    } catch {
+      // Fall through to UFC.com only when UFCStats is unavailable.
+    }
+
+    // Fallback: UFC.com athlete record. We preserve only rows whose result
+    // can be parsed explicitly. UNKNOWN rows are discarded rather than guessed.
     const unique = new Map<string, FighterFightHistoryItem>();
     const addItems = (items: FighterFightHistoryItem[]) => {
       for (const item of items) {
+        if (item.result === "UNKNOWN") continue;
         const key = `${normalizeName(item.opponentName)}|${item.date ?? ""}|${item.method ?? ""}|${item.round ?? ""}|${item.time ?? ""}`;
         if (!unique.has(key)) unique.set(key, item);
       }
@@ -377,19 +391,13 @@ export class UfcProvider implements MMADataProvider {
         html: await fetchHtml(`${UFC}/athlete/${encodeURIComponent(id)}?page=${pageNumber}`, 21600),
       })),
     );
+
     for (const result of historyPages) {
       if (result.status !== "fulfilled") continue;
       addItems(parseUfcHistoryFromHtml(result.value.html, page.fighter.name, result.value.pageNumber));
     }
 
-    if (unique.size) return [...unique.values()];
-
-    // Secondary free source only when UFC.com did not expose athlete-record rows.
-    try {
-      return await this.statsHistory.getFighterHistoryByName(page.fighter.name);
-    } catch {
-      return [];
-    }
+    return [...unique.values()];
   }
 
   async getRankings(): Promise<Ranking[]> {

@@ -49,3 +49,6 @@ Se tiparon explícitamente `fighter`, `stats` y `history` en la página de perfi
 - Las tarjetas del directorio recuperan la foto del perfil cuando el listado no la entrega.
 - Se agregó `Mis peleadores favoritos`, guardado localmente en el navegador/PWA.
 - `CHAMPION` solo aparece cuando el perfil oficial incluye la etiqueta exacta `Title Holder`.
+
+## v7 - historial relativo al peleador
+El historial usa UFCStats como fuente primaria para que WIN/LOST siempre corresponda al peleador cuyo perfil se está viendo. UFC.com queda como respaldo.
