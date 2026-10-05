@@ -52,3 +52,6 @@ Se tiparon explícitamente `fighter`, `stats` y `history` en la página de perfi
 
 ## v10 — historial simple corregido
 Se restauró el historial basado en UFC.com que sí cargaba visualmente y se corrigió WIN/LOST para que siempre sea relativo al peleador cuyo perfil está abierto.
+
+## v11 — corrección de despliegue
+Se corrigió el archivo obsoleto `lib/providers/espnHistoryProvider.ts` que podía quedar en GitHub después de subir versiones nuevas desde el navegador. El historial activo continúa usando el flujo simple de v10.
