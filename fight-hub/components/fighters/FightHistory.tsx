@@ -2,9 +2,9 @@ import { CalendarDays, Clock3 } from "lucide-react";
 import type { FighterFightHistoryItem } from "@/lib/types/mma";
 
 function resultLabel(result: FighterFightHistoryItem["result"]): string {
-  if (result === "WIN") return "WIN";
-  if (result === "LOSS") return "LOSS";
-  if (result === "DRAW") return "DRAW";
+  if (result === "WIN") return "GANÓ";
+  if (result === "LOSS") return "PERDIÓ";
+  if (result === "DRAW") return "EMPATE";
   if (result === "NC") return "NC";
   return "RESULTADO N/D";
 }
@@ -21,7 +21,7 @@ export function FightHistory({ items }: { items: FighterFightHistoryItem[] }) {
     {items.map((fight) => <article className="history-card" key={fight.id}>
       <div className={`history-result history-result-${fight.result.toLowerCase()}`}>{resultLabel(fight.result)}</div>
       <div className="history-main">
-        <span className="history-kicker">VS</span>
+        <span className="history-kicker">{fight.result === "WIN" ? "GANÓ CONTRA" : fight.result === "LOSS" ? "PERDIÓ CONTRA" : "VS"}</span>
         <h3>{fight.opponentName}</h3>
         <div className="history-event">{fight.eventName ?? "Evento no disponible"}</div>
         <div className="history-date"><CalendarDays size={14}/>{displayDate(fight.date)}</div>

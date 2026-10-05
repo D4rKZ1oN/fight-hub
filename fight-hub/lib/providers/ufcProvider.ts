@@ -205,11 +205,76 @@ export class UfcProvider implements MMADataProvider {
   async searchFighters(query: string): Promise<Fighter[]> {
     const q = query.trim();
     if (q.length < 2) return [];
-    const html = await fetchHtml(`${UFC}/athletes/all?gender=All&search=${encodeURIComponent(q)}&page=0`, 3600);
-    const $ = cheerio.load(html);
-    const items = $("div.c-listing-athlete__text").toArray().map((el) => athleteFromCard($, el)).filter((v): v is Fighter => Boolean(v));
-    const needle = q.toLocaleLowerCase();
-    return items.filter((fighter) => fighter.name.toLocaleLowerCase().includes(needle) || fighter.nickname?.toLocaleLowerCase().includes(needle)).slice(0, 12);
+
+    const needle = normalizeName(q);
+    const byId = new Map<string, Fighter>();
+    const add = (fighter: Fighter | null | undefined) => {
+      if (!fighter) return;
+      const name = normalizeName(fighter.name);
+      const nickname = normalizeName(fighter.nickname ?? "");
+      if (!name.includes(needle) && !nickname.includes(needle) && !needle.includes(name)) return;
+      if (!byId.has(fighter.id)) byId.set(fighter.id, fighter);
+    };
+
+    // Primary search: UFC's own athlete directory. Normalize accents and punctuation
+    // before filtering so searches like "Jiri Prochazka" can match "Jiří Procházka".
+    try {
+      const html = await fetchHtml(`${UFC}/athletes/all?gender=All&search=${encodeURIComponent(q)}&page=0`, 3600);
+      const $ = cheerio.load(html);
+      $("div.c-listing-athlete__text")
+        .toArray()
+        .map((el) => athleteFromCard($, el))
+        .filter((fighter): fighter is Fighter => Boolean(fighter))
+        .forEach(add);
+    } catch {
+      // Continue with the fallbacks below.
+    }
+
+    // Exact-name fallback: UFC profile slugs normally follow the normalized name.
+    // This fixes cases where the UFC directory search does not return an exact name.
+    const directSlug = slugify(q);
+    if (directSlug && !byId.has(directSlug)) {
+      try {
+        add((await this.fighterPage(directSlug))?.fighter);
+      } catch {
+        // A slug is only a candidate; a 404 is not an application error.
+      }
+    }
+
+    // Secondary free index: UFCStats is used only to discover matching names.
+    // Every candidate is verified against an actual UFC profile before being returned.
+    const hasExact = [...byId.values()].some((fighter) => normalizeName(fighter.name) === needle);
+    if (!hasExact || byId.size < 4) {
+      try {
+        const names = await this.statsHistory.searchFighterNames(q);
+        for (const name of names) {
+          if (byId.size >= 12) break;
+          const slug = slugify(name);
+          if (!slug || byId.has(slug)) continue;
+          try {
+            add((await this.fighterPage(slug))?.fighter);
+          } catch {
+            // Ignore candidates that do not map to an active UFC profile.
+          }
+        }
+      } catch {
+        // Keep the UFC results if UFCStats is temporarily unavailable.
+      }
+    }
+
+    return [...byId.values()]
+      .sort((a, b) => {
+        const aName = normalizeName(a.name);
+        const bName = normalizeName(b.name);
+        const aExact = aName === needle ? 1 : 0;
+        const bExact = bName === needle ? 1 : 0;
+        if (aExact !== bExact) return bExact - aExact;
+        const aStarts = aName.startsWith(needle) ? 1 : 0;
+        const bStarts = bName.startsWith(needle) ? 1 : 0;
+        if (aStarts !== bStarts) return bStarts - aStarts;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 12);
   }
 
   private async fighterPage(id: string): Promise<{ fighter: Fighter; stats: FighterStats; html: string } | null> {

@@ -40,6 +40,45 @@ function parseRound(value: string): number | null {
  * This adapter reads only published UFCStats data. It does not invent missing bouts.
  */
 export class UfcStatsProvider {
+  async searchFighterNames(query: string): Promise<string[]> {
+    const normalized = normalizeName(query);
+    if (normalized.length < 2) return [];
+
+    const words = normalized.split(/\s+/).filter(Boolean);
+    const likelyLastName = words.at(-1) ?? normalized;
+    const char = (likelyLastName[0] ?? normalized[0] ?? "a").toLowerCase();
+    if (!/^[a-z]$/.test(char)) return [];
+
+    const html = await fetchHtml(`${UFC_STATS}/statistics/fighters?char=${encodeURIComponent(char)}&page=all`, 21600);
+    const $ = cheerio.load(html);
+    const matches: Array<{ name: string; score: number }> = [];
+
+    $("tr.b-statistics__table-row").each((_, row) => {
+      const links = $(row).find('a[href*="/fighter-details/"]');
+      if (!links.length) return;
+      const names = links.toArray().map((el) => clean($(el).text())).filter(Boolean);
+      const fullName = clean(names.slice(0, 2).join(" "));
+      const candidate = normalizeName(fullName);
+      if (!fullName || !candidate) return;
+
+      let score = 0;
+      if (candidate === normalized) score = 100;
+      else if (candidate.startsWith(normalized)) score = 80;
+      else if (candidate.includes(normalized)) score = 70;
+      else {
+        const queryWords = normalized.split(/\s+/).filter(Boolean);
+        if (queryWords.length && queryWords.every((word) => candidate.includes(word))) score = 60;
+      }
+      if (score) matches.push({ name: fullName, score });
+    });
+
+    return matches
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+      .map((item) => item.name)
+      .filter((name, index, array) => array.indexOf(name) === index)
+      .slice(0, 8);
+  }
+
   private async findFighterUrl(fighterName: string): Promise<string | null> {
     const normalized = normalizeName(fighterName);
     const parts = normalized.split(/\s+/).filter(Boolean);
