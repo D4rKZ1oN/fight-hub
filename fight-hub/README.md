@@ -50,15 +50,5 @@ Se tiparon explícitamente `fighter`, `stats` y `history` en la página de perfi
 - Se agregó `Mis peleadores favoritos`, guardado localmente en el navegador/PWA.
 - `CHAMPION` solo aparece cuando el perfil oficial incluye la etiqueta exacta `Title Holder`.
 
-## v7 - historial relativo al peleador
-El historial usa UFCStats como fuente primaria para que WIN/LOST siempre corresponda al peleador cuyo perfil se está viendo. UFC.com queda como respaldo.
-
-
-## v8 - historial WIN/LOST y caché
-- Fight History usa UFCStats como única fuente de resultado.
-- Se eliminó el fallback de UFC.com que podía etiquetar peleas incorrectamente.
-- El historial evita caché de HTML y el perfil del peleador se renderiza dinámicamente.
-- WIN corresponde al peleador del perfil; LOST corresponde a una derrota de ese peleador.
-
-## v9 - ESPN Fight History
-El historial usa ESPN MMA Fight History como fuente principal para evitar bloqueos de UFCStats en despliegues Vercel y conservar resultados WIN/LOSS desde la perspectiva del peleador.
+## v10 — historial simple corregido
+Se restauró el historial basado en UFC.com que sí cargaba visualmente y se corrigió WIN/LOST para que siempre sea relativo al peleador cuyo perfil está abierto.

@@ -12,9 +12,6 @@ import { FightHistory } from "@/components/fighters/FightHistory";
 import { CardSection } from "@/components/ui/CardSection";
 import { EmptyState } from "@/components/ui/EmptyState";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 type Props = {
   params: Promise<{ fighterId: string }>;
 };
@@ -96,7 +93,8 @@ export default async function FighterPage({ params }: Props) {
       </CardSection>
 
       <p className="source-note">
-        Perfil y estadísticas: UFC.com. Historial de peleas: ESPN como fuente principal, con UFCStats como respaldo. No se rellenan campos ausentes.
+        Perfil, estadísticas e historial: UFC.com cuando están disponibles, con UFCStats
+        únicamente como respaldo para el historial. No se rellenan campos ausentes.
       </p>
     </div>
   );

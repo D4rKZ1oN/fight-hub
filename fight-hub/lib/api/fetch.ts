@@ -45,26 +45,3 @@ export async function fetchHtml(url: string, revalidate: number): Promise<string
     clearTimeout(timeout);
   }
 }
-
-
-export async function fetchHtmlFresh(url: string): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 9000);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      cache: "no-store",
-      headers: {
-        Accept: "text/html,application/xhtml+xml",
-        "User-Agent": "Mozilla/5.0 (compatible; FightHub/1.0; +personal-project)",
-      },
-    });
-    if (!response.ok) throw new DataSourceError(`Fuente respondió ${response.status}`, response.status);
-    return await response.text();
-  } catch (error) {
-    if (error instanceof DataSourceError) throw error;
-    throw new DataSourceError("No pudimos consultar la fuente oficial.");
-  } finally {
-    clearTimeout(timeout);
-  }
-}

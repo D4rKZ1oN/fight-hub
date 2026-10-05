@@ -13,7 +13,6 @@ import type {
 } from "@/lib/types/mma";
 import { cleanText, parseNumber, slugify } from "@/lib/utils/text";
 import { UfcStatsProvider } from "./ufcStatsProvider";
-import { EspnHistoryProvider } from "./espnHistoryProvider";
 
 const UFC = "https://www.ufc.com";
 const DIVISIONS = [
@@ -132,15 +131,64 @@ function mapUfcResult(value: string): FightHistoryResult {
   return "UNKNOWN";
 }
 
+function fighterSideInMatchup(matchup: string, fighterName: string): 0 | 1 | null {
+  const sides = matchup
+    .split(/\s+vs\.?\s+/i)
+    .map((side) => cleanText(side))
+    .filter(Boolean) as string[];
+  if (sides.length !== 2) return null;
+
+  const fighter = normalizeName(fighterName);
+  const fighterTokens = fighter.split(/\s+/).filter(Boolean);
+  const firstName = fighterTokens[0] ?? "";
+  const lastName = fighterTokens.at(-1) ?? "";
+
+  const score = (side: string): number => {
+    const normalized = normalizeName(side);
+    const tokens = normalized.split(/\s+/).filter(Boolean);
+    if (!normalized) return 0;
+    if (normalized === fighter) return 100;
+    if (lastName && normalized === lastName) return 95;
+    if (firstName && lastName && normalized.includes(firstName) && normalized.includes(lastName)) return 90;
+    if (lastName && tokens.includes(lastName)) return 80;
+    if (lastName && normalized.includes(lastName)) return 70;
+    const overlap = tokens.filter((token) => fighterTokens.includes(token)).length;
+    return overlap * 10;
+  };
+
+  const a = score(sides[0]);
+  const b = score(sides[1]);
+  if (a === 0 && b === 0) return null;
+  if (a === b) return null;
+  return a > b ? 0 : 1;
+}
+
+function relativeResultFromMatchup(
+  resultText: string,
+  matchup: string,
+  fighterName: string,
+): FightHistoryResult {
+  const base = mapUfcResult(resultText);
+  if (base === "DRAW" || base === "NC" || base === "UNKNOWN") return base;
+
+  // UFC.com's athlete-record cards label the result for the FIRST fighter in
+  // the matchup. Convert it to the perspective of the fighter profile that is
+  // currently being viewed.
+  const side = fighterSideInMatchup(matchup, fighterName);
+  if (side === null) return base;
+  if (side === 0) return base;
+  return base === "WIN" ? "LOSS" : "WIN";
+}
+
 function opponentFromMatchup(matchup: string, fighterName: string): string {
-  const sides = matchup.split(/\s+vs\.?\s+/i).map((side) => cleanText(side)).filter(Boolean) as string[];
+  const sides = matchup
+    .split(/\s+vs\.?\s+/i)
+    .map((side) => cleanText(side))
+    .filter(Boolean) as string[];
   if (sides.length !== 2) return matchup;
-  const fighterNormalized = normalizeName(fighterName);
-  const lastName = fighterNormalized.split(/\s+/).filter(Boolean).at(-1) ?? fighterNormalized;
-  const firstMatches = normalizeName(sides[0]).includes(lastName);
-  const secondMatches = normalizeName(sides[1]).includes(lastName);
-  if (firstMatches && !secondMatches) return sides[1];
-  if (secondMatches && !firstMatches) return sides[0];
+  const side = fighterSideInMatchup(matchup, fighterName);
+  if (side === 0) return sides[1];
+  if (side === 1) return sides[0];
   return sides[1];
 }
 
@@ -169,7 +217,7 @@ function parseUfcHistoryFromHtml(html: string, fighterName: string, pageNumber: 
     const opponentName = opponentFromMatchup(matchup, fighterName);
     items.push({
       id: `${pageNumber}-${index}-${slugify(opponentName)}-${slugify(date ?? "date")}`,
-      result: mapUfcResult(resultText),
+      result: relativeResultFromMatchup(resultText, matchup, fighterName),
       opponentName,
       opponentId: null,
       eventName: null,
@@ -188,7 +236,6 @@ function parseUfcHistoryFromHtml(html: string, fighterName: string, pageNumber: 
 
 export class UfcProvider implements MMADataProvider {
   private statsHistory = new UfcStatsProvider();
-  private espnHistory = new EspnHistoryProvider();
 
   async getUpcomingEvents(): Promise<Event[]> { return []; }
   async getEvent(): Promise<Event | null> { return null; }
@@ -363,22 +410,32 @@ export class UfcProvider implements MMADataProvider {
     const page = await this.fighterPage(id);
     if (!page?.fighter.name) return [];
 
-    // ESPN publishes a dedicated MMA Fight History table whose W/L result is
-    // already relative to the fighter profile being viewed. It is the primary
-    // history source because it is served from the same ESPN ecosystem already
-    // used by Fight Hub for events and is more reliable on Vercel than UFCStats.
-    try {
-      const history = await this.espnHistory.getFighterHistoryByName(page.fighter.name);
-      if (history.length) return history;
-    } catch {
-      // Continue to the secondary public source below.
+    const unique = new Map<string, FighterFightHistoryItem>();
+    const addItems = (items: FighterFightHistoryItem[]) => {
+      for (const item of items) {
+        const key = `${normalizeName(item.opponentName)}|${item.date ?? ""}|${item.method ?? ""}|${item.round ?? ""}|${item.time ?? ""}`;
+        if (!unique.has(key)) unique.set(key, item);
+      }
+    };
+
+    addItems(parseUfcHistoryFromHtml(page.html, page.fighter.name, 0));
+
+    const historyPages = await Promise.allSettled(
+      Array.from({ length: 4 }, (_, index) => index + 1).map(async (pageNumber) => ({
+        pageNumber,
+        html: await fetchHtml(`${UFC}/athlete/${encodeURIComponent(id)}?page=${pageNumber}`, 21600),
+      })),
+    );
+    for (const result of historyPages) {
+      if (result.status !== "fulfilled") continue;
+      addItems(parseUfcHistoryFromHtml(result.value.html, page.fighter.name, result.value.pageNumber));
     }
 
-    // Secondary fallback only.  If UFCStats is unavailable or cannot map the
-    // athlete, return an empty state instead of fabricating a result.
+    if (unique.size) return [...unique.values()];
+
+    // Secondary free source only when UFC.com did not expose athlete-record rows.
     try {
-      const history = await this.statsHistory.getFighterHistoryByName(page.fighter.name);
-      return history.filter((item) => item.result !== "UNKNOWN");
+      return await this.statsHistory.getFighterHistoryByName(page.fighter.name);
     } catch {
       return [];
     }

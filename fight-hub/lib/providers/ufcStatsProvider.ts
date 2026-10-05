@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { fetchHtml, fetchHtmlFresh } from "@/lib/api/fetch";
+import { fetchHtml } from "@/lib/api/fetch";
 import type { FighterFightHistoryItem, FightHistoryResult } from "@/lib/types/mma";
 
 const UFC_STATS = "https://ufcstats.com";
@@ -22,12 +22,11 @@ function slugFromUfcAthleteName(name: string): string {
 }
 
 function mapResult(value: string): FightHistoryResult {
-  const raw = clean(value).toLowerCase();
-  const token = raw.split(/\s+/)[0] ?? raw;
-  if (token === "w" || token === "win") return "WIN";
-  if (token === "l" || token === "loss" || token === "lost") return "LOSS";
-  if (token === "d" || token === "draw") return "DRAW";
-  if (token === "nc" || raw.includes("no contest")) return "NC";
+  const result = clean(value).toLowerCase();
+  if (result.startsWith("w")) return "WIN";
+  if (result.startsWith("l")) return "LOSS";
+  if (result.startsWith("d")) return "DRAW";
+  if (result.includes("nc") || result.includes("no contest")) return "NC";
   return "UNKNOWN";
 }
 
@@ -112,7 +111,7 @@ export class UfcStatsProvider {
     const fighterUrl = await this.findFighterUrl(fighterName);
     if (!fighterUrl) return [];
 
-    const html = await fetchHtmlFresh(fighterUrl);
+    const html = await fetchHtml(fighterUrl, 21600);
     const $ = cheerio.load(html);
     const history: FighterFightHistoryItem[] = [];
 
@@ -125,20 +124,14 @@ export class UfcStatsProvider {
       if (fighterNames.length < 2) return;
 
       const subjectNormalized = normalizeName(fighterName);
-      const firstNormalized = normalizeName(fighterNames[0]);
-      const secondNormalized = normalizeName(fighterNames[1]);
-      const firstIsSubject = firstNormalized === subjectNormalized;
-      const secondIsSubject = secondNormalized === subjectNormalized;
-
-      // Ignore a row if the fighter whose profile is being viewed is not one
-      // of the two names. This avoids ever assigning an opponent/result from
-      // an unrelated row.
-      if (!firstIsSubject && !secondIsSubject) return;
-
-      const opponentName = firstIsSubject ? fighterNames[1] : fighterNames[0];
-      const opponentHref = firstIsSubject
-        ? ($(fighterLinks[1]).attr("href") ?? null)
-        : ($(fighterLinks[0]).attr("href") ?? null);
+      const firstIsSubject = normalizeName(fighterNames[0]) === subjectNormalized;
+      const secondIsSubject = normalizeName(fighterNames[1]) === subjectNormalized;
+      let opponentName = fighterNames[1];
+      let opponentHref = $(fighterLinks[1]).attr("href") ?? null;
+      if (secondIsSubject && !firstIsSubject) {
+        opponentName = fighterNames[0];
+        opponentHref = $(fighterLinks[0]).attr("href") ?? null;
+      }
 
       const eventLink = $(cells[6]).find('a[href*="/event-details/"]').first();
       const eventName = clean(eventLink.text()) || null;
@@ -149,8 +142,6 @@ export class UfcStatsProvider {
       const methodLines = $(cells[7]).find("p").toArray().map((el) => clean($(el).text())).filter(Boolean);
       const method = methodLines[0] ?? (clean($(cells[7]).text()) || null);
       const methodDetail = methodLines.length > 1 ? methodLines.slice(1).join(" · ") : null;
-      // On a UFCStats fighter-details page, the first column is W/L from
-      // this profile fighter's perspective, not from the opponent's.
       const result = mapResult($(cells[0]).text());
       const fightUrl = $(row).attr("data-link") ?? null;
       const rawId = fightUrl?.match(/fight-details\/([^/?#]+)/)?.[1] ?? `${index}-${normalizeName(opponentName).replace(/\s+/g, "-")}`;
